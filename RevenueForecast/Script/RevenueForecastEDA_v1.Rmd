@@ -1,0 +1,236 @@
+---
+title: "Revenue Forecast - Exploratory Data Analysis Report"
+author: "PLZ"
+date: "May 12, 2016"
+output: html_document
+---
+0--------1---------2---------3---------4---------5---------6---------7---------8
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+***
+### __Objectives:__
+> To fully understanding the source data and making appropriate decisions about modeling, need to implement the following objectives:
+>
+> *	Identify any data attributes with a significant percentage of missing values.
+>    +	Determine attributes with missing values be excluded from analysis or imputed
+>    +	Recommended logic for imputing values if applicable
+>    
+> * Identify the data distribution of the initial dataset and any significant outliers related to:
+    + Daily Total Amount of Facility Referrals
+    + Daily Total Amount of Billed Cases
+    + Facility Referrals and/or Billed cases outliers Detection
+    + Understand the central tendency and spread of each distribution analysis.
+>
+> *	Understanding daily trends of the following data attributes:
+    +	Facility Referrals
+    +	Billed Cases
+    +	Summary, Carrier and Facility level trends
+>    
+> *	Measure the correlation between data attributes in order to find attributes with the greatest influence on Facility Referrals and Billed Cases.
+>
+> *	Measure elapsed time between Facility Referrals and Billed Cases.
+>
+> *	Create geography graphs of facility and member locations
+
+
+***
+### __Result:__
+
+#### 1. Missing Value Analysis of Data Attributes
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+rm(list=ls())
+# Read data extracted from Insight
+edadata <- read.csv("C:/Users/pzhou/Analytic Project/RevenueForecast/Data/fullData.csv")
+#head(edadata,1)
+
+# Calculate the missing value percentage of each column 
+missingvalue.percentage <- data.frame(apply(edadata, 2, function(col)sum(is.na(col))/length(col)*100))
+# Add one column "Action"
+missingvalue.percentage$Action <- "No Need"
+# Rename the column name
+colnames(missingvalue.percentage) <- c("MissingValuePercentage","Action")
+# Change the action value if missing value percentage exceeds specific value(5%)
+missingvalue.percentage$Action[which(missingvalue.percentage$MissingValuePercentage >= 5)] <- "Need to Impute"
+missingvalue.percentage$Action[which(missingvalue.percentage$MissingValuePercentage > 0 & missingvalue.percentage$MissingValuePercentage < 5)] <- "Need to Exclude"
+# Write the analysis result into csv file
+#write.csv(missingvalue.percentage, file = "C:/Users/pzhou/Analytic Project/RevenueForecast/Report/MissingValueAnalysis.csv", row.names = TRUE)
+```
+
+*The missing value analysis of each attributes(head 6) shown as below with percentage in descending order.(Here we have set 5% for missing value percentage metrics, that means if percentage exceeds 5%, we need to take some imputation action, but if percentage is less than 5% and greater than zero, consider to take exclusion action, otherwise, no need to take any action.) More detailed, please refer to csv file.*
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Sort data with missing value percentage in descending order
+newdata <- missingvalue.percentage[order(-missingvalue.percentage$MissingValuePercentage),]
+
+# Display the missing value result as table
+library(gridExtra)
+library(grid)
+grid.table(head(newdata), cols = colnames(missingvalue.percentage))
+```
+
+
+#### 2. Daily Facility Referrals Distribution And Outlier Detection
+
+Here is detailed distribution analysis description:
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Change variable type for Case.Referral.Date and Case.Billing.Month.Date
+edadata <- transform(edadata, Case.Referral.Date = as.Date(Case.Referral.Date, format='%m/%d/%Y'), Case.Billing.Month.Date = as.Date(Case.Billing.Month.Date, format='%m/%d/%Y'))
+
+#Calculate the daily facility referral amount
+library(plyr)
+groupcolumns <- c("Case.Referral.Date")
+datacolumns <- c("Case.Referral.Date")
+facility.referral.amount <- ddply(edadata, groupcolumns, function(x) count(x[datacolumns]))
+#write.csv(facility.referral.amount, file = "C:/Users/pzhou/Analytic Project/RevenueForecast/Report/FacilityReferralAmount.csv", row.names = FALSE)
+
+# Calculate the daily Billed Cases amount
+library(plyr)
+groupcolumns.cases <- c("Case.Billing.Month.Date")
+datacolumns.cases <- c("Case.Billing.Month.Date")
+billed.cases.amount <- ddply(edadata, groupcolumns.cases, function(x) count(x[groupcolumns.cases]))
+#write.csv(billed.cases.amount, file = "C:/Users/pzhou/Analytic Project/RevenueForecast/Report/BilledCasesAmount.csv", row.names = FALSE)
+
+# Change type to factor
+facility.referral.amount.sub <- subset(facility.referral.amount, Case.Referral.Date > as.Date("01/01/2016",format='%m/%d/%Y'))
+billed.cases.amount.sub <- subset(billed.cases.amount, Case.Billing.Month.Date > as.Date("01/01/2014",format='%m/%d/%Y'))
+facility.referral.amount.sub <- transform(facility.referral.amount.sub, Case.Referral.Date = as.factor(Case.Referral.Date))
+billed.cases.amount.sub <- transform(billed.cases.amount.sub, Case.Billing.Month.Date = as.factor(Case.Billing.Month.Date))
+```
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Plot the daily facility referral amount distribution
+#plot(facility.referral.amount, xlab = "Time", ylab = "Amount", main = "Daily Facility Referral Amount Distribution")
+#hist(facility.referral.amount$freq)
+
+# Plot the density of the daily facility referral amount distribution
+#plot(facility.referral.amount, main="Daily Facility Referral Amount Distribution")
+#polygon(facility.referral.amount, col="red", border="blue")
+  
+#Scatterplot and add fit lines
+library(car)
+scatterplot(freq ~ Case.Referral.Date, data = facility.referral.amount.sub, xlab="Day", ylab="Amount",main="Daily Facility Referral Amount Distribution", labels=row.names(facility.referral.amount.sub))
+#abline(lm(facility.referral.amount.sub$freq ~ facility.referral.amount.sub$Case.Referral.Date), col="red") # regression line (y~x) 
+lines(lowess(facility.referral.amount.sub$Case.Referral.Date,facility.referral.amount.sub$freq), col="blue") # lowess line (x,y)
+```
+
+Here is detailed outlier analysis description
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Create the time series data
+facility.referral.amount.sub.ts <- ts(facility.referral.amount.sub$freq, frequency = 365.25, start = c(2016,1,1))
+# Install package tsoutliers
+library(tsoutliers)
+# Detect outliers with ARIMA model and remove outliers
+#facility.referral.amount.sub.ts.outliers.arima <- tso(y = facility.referral.amount.sub.ts, types = c("AO", "LS", "TC"), maxit = 10, remove.method = "bottom-up", tsmethod = "arima", args.tsmethod = list(order = c(5, 1, 0), seasonal = list(order = c(5, 1, 0))))
+# Detect the outlier in time series with model linear regression "stsm" and remove outliers
+facility.referral.amount.sub.ts.outliers.stsm <- tso(y = facility.referral.amount.sub.ts, types = c("AO", "LS", "TC"), tsmethod = "stsm", args.tsmodel = list(model = "local-level"))
+facility.referral.amount.sub.ts.outliers.stsm$fit$call$xreg <- NULL
+#facility.referral.amount.sub.ts.outliers.stsm$outliers  # Here we can find that no outliers were detected
+# Plot the original series and adjusted series with estimated outlier effect
+#plot(facility.referral.amount.sub.ts.outliers.arima, col = "black")  #arima model
+plot(facility.referral.amount.sub.ts.outliers.stsm, col = "black")  # linear regression model
+```
+
+
+#### 3. Daily Billed Cases Distribution And Outlier Detection
+
+Here is detailed distribution analysis description:
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Plot the daily billed cases amount distribution
+#plot(billed.cases.amount, xlab = "Time", ylab = "Amount", main = "Daily Billed Cases Amount Distribution")
+#hist(billed.cases.amount$freq)
+
+# Plot the density of the daily billed cases amount distribution
+plot(billed.cases.amount.sub, main="Daily Billed Cases Amount Distribution")
+#polygon(billed.cases.amount, col="red", border="blue")
+
+#Scatterplot
+library(car)
+scatterplot(freq ~ Case.Billing.Month.Date, data=billed.cases.amount.sub, xlab="Day", ylab="Amount",main="Daily Billed Cases Amount Distribution", labels=row.names(billed.cases.amount.sub))
+#abline(lm(billed.cases.amount$freq ~ billed.cases.amount$Case.Billing.Month.Date), col="red") # regression line (y~x) 
+#lines(lowess(billed.cases.amount$Case.Billing.Month.Date, billed.cases.amount$freq), col="blue") # lowess line (x,y)
+```
+
+Here is detailed outlier analysis description
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Create the time series data
+billed.cases.amount.sub.ts <- ts(billed.cases.amount.sub$freq, frequency = 12, start = c(2014,1))
+# Install package tsoutliers
+library(tsoutliers)
+library(forecast)
+# Detect outliers with ARIMA model and remove outliers
+#billed.cases.amount.sub.ts.outliers.arima <- tso(y = billed.cases.amount.sub.ts, types = c("AO", "LS", "TC"), maxit = 10, remove.method = "bottom-up", tsmethod = "arima", args.tsmethod = list(order = c(0, 1, 1), seasonal = list(order = c(0, 1, 1))))
+
+# Detect the outlier in time series with model linear regression "stsm" and remove outliers
+billed.cases.amount.sub.ts.outliers.stsm <- tso(y = billed.cases.amount.sub.ts, types = c("AO", "LS", "TC"), tsmethod = "stsm", args.tsmodel = list(model = "local-level"))
+billed.cases.amount.sub.ts.outliers.stsm$fit$call$xreg <- NULL
+billed.cases.amount.sub.ts.outliers.stsm$outliers  # Here we can find that no outliers were detected
+# Plot the original series and adjusted series with estimated outlier effect
+#plot(billed.cases.amount.ts.outliers.arima, col = "black")  #arima model
+plot(billed.cases.amount.sub.ts.outliers.stsm, col = "black", main = "Billed cases")  # linear regression model
+```
+
+
+#### 4. Trend Summary
+
+Here is trend summary 
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Exclude the missing value of revenue if applicable
+#newdata.eld<-na.exclude(newdata) # After exclude, the obs number will decrease 
+```
+
+#### 5. Measure the correlation between data attributes and Facility Referrals or Billed Cases
+
+Here is correlation analysis between data attributes
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+# Code Part
+# Transform all non-numeric to numeric
+edadata.new <- transform(edadata, Carrier = as.numeric(Carrier),Case.Assigned.User = as.numeric(Case.Assigned.User),Case.Status = as.numeric(Case.Status),Reporting.Category = as.numeric(Reporting.Category),Actual.Revenue = as.numeric(Actual.Revenue),Facility = as.numeric(Facility),Facility.City = as.numeric(Facility.City),Member.Gender = as.numeric(Member.Gender))
+# correlation measure(matrix)
+cor(edadata.new[c("Carrier", "Case.Assigned.User", "Case.Status", "Reporting.Category", "Actual.Revenue", "Facility", "Facility.City", "Member.Gender")])
+
+#scatterplot of correlations
+#install package psych
+library(psych)
+pairs.panels(edadata.new[c("Carrier", "Case.Assigned.User", "Case.Status", "Reporting.Category", "Actual.Revenue", "Facility", "Facility.City", "Member.Gender")])
+```
+
+
+#### 6. Measure elapsed time between Facility Referrals and Billed Cases
+
+Here is detailed analysis description
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+
+```
+
+#### 7. Create geography graphs of facility and member locations
+
+Here is detailed analysis description
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+
+```
+
+***
+### __Summary and Recommendation:__
+
+Sumany and Recommendation
+
+```{r echo=FALSE, Warning=FALSE, message=FALSE}
+
+```
